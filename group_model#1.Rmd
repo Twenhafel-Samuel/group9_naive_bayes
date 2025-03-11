@@ -5,8 +5,20 @@ date: "2025-03-10"
 ---
 
 ```{r}
-#---Nathans Section
+
+sh <- suppressPackageStartupMessages
+sh(library(tidyverse))
+sh(library(caret))
+sh(library(tidytext))
+sh(library(SnowballC)) 
+sh(library(pROC))      
+sh(library(glmnet))
+sh(library(fastDummies))
+data(stop_words)
+
 ```
+
+
 
 ```{r}
 wine <- readRDS(gzcon(url("https://github.com/cd-public/D505/raw/master/dat/model.rds")))
@@ -59,7 +71,6 @@ wine2 <- wine %>% select(-c(description,count,id,price,points,year))
 
 ```
 
-### Sam
 ```{r}
 wine <- readRDS(gzcon(url("https://github.com/cd-public/D505/raw/master/dat/model.rds")))
 wine <- tibble::rowid_to_column(wine, "id")
