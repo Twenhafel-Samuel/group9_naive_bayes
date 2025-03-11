@@ -1,0 +1,187 @@
+---
+title: "Model#1"
+output: html_document
+date: "2025-03-10"
+---
+
+```{r}
+#---Nathans Section
+```
+
+```{r}
+wine <- readRDS(gzcon(url("https://github.com/cd-public/D505/raw/master/dat/model.rds")))
+wine <- tibble::rowid_to_column(wine, "id")
+names(wine)[names(wine) == 'id'] = 'id'
+```
+```{r}
+wine <- readRDS(gzcon(url("https://cd-public.github.io/D505/dat/pinot.rds")))
+```
+
+```{r}
+
+```
+
+```{r}
+wine <- wine %>% mutate(points_per_price = points/price)
+```
+
+
+
+```{r}
+province_counts <- wine %>%
+  group_by(province) %>%
+  summarize(count = n())
+total_count <- sum(province_counts$count)
+wine <- wine %>% left_join(province_counts, by = "province")
+wine <- wine %>% 
+  mutate(region_weight = log1p(total_count / count) * #getting the log of total_count/count to get basic weights.
+           (1 + (price / mean(price, na.rm = TRUE)) * 0.3 + 
+           (points / mean(points, na.rm = TRUE)) * 0.2))
+```
+
+```{r}
+bing_lexicon <- get_sentiments("bing") #bing seemed to work better than nrc or stanford methods
+sentiment_scores <- wine %>% 
+  unnest_tokens(word, description) %>% 
+  inner_join(bing_lexicon, by = "word") %>% 
+  group_by(id) %>%  # grouping by id so each have there own scores. Originally I used province however that was silly because it just makes a second province column.
+  summarise(sentiment_score = sum(ifelse(sentiment == "positive", 1, -1))) #setting when a sentiment is positive or negative. We assign 1 to positive -1 to negative. We then add up rows based on id to see a sentiment score for each individual wine rating.
+```
+
+```{r}
+wine <- left_join(wine, sentiment_scores, by = "id")
+```
+
+
+```{r}
+wine<-na.omit(wine)
+wine2 <- wine %>% select(-c(description,count,id,price,points,year))
+
+```
+
+### Sam
+```{r}
+wine <- readRDS(gzcon(url("https://github.com/cd-public/D505/raw/master/dat/model.rds")))
+wine <- tibble::rowid_to_column(wine, "id")
+names(wine)[names(wine) == 'id'] = 'id'
+
+wine2 <- tibble::rowid_to_column(wine2, "id")
+names(wine2)[names(wine2) == 'id'] = 'id'
+
+```
+
+
+```{r}
+binning <- wine %>%
+  mutate(year_f = as.factor(year))%>%
+  select(-starts_with("year_")) %>% 
+  mutate(points_f = case_when(
+    points < 90 ~ "low",
+    points >= 90 & points < 96 ~ "med",
+    points >= 96 ~ "high"
+  )
+           )  %>% 
+  mutate(price_f = case_when(
+    price < 16 ~ "low",
+    price >= 16 & price < 41 ~ "med",
+    price >= 41 ~ "high"
+  )
+           )  %>% 
+  mutate(year_f = case_when(
+    year < 2005 ~ "old",
+    year >= 2005 & year < 2011 ~ "recent",
+    year >= 2011 ~ "current"
+  )
+           ) %>% 
+  select(-price,-points,-year,-description, province)
+
+head(binning)
+```
+
+
+```{r}
+desc_to_words <- function(df, omits) { 
+  df %>%
+    unnest_tokens(word, description) %>%
+    anti_join(stop_words) %>% # get rid of stop words
+    filter(!(word %in% omits))
+}
+
+words <- desc_to_words(wine, c("wine","pinot","vineyard","tannins", "drink","flavors", "finish", "notes"))
+
+words_to_stems <- function(df) { 
+  df %>%
+    mutate(word = wordStem(word))
+}
+
+stems <- words_to_stems(words)
+
+filter_by_count <- function(df, j) { 
+  df %>%
+    count(id, word) %>% 
+    group_by(id) %>% mutate(exists = (n>0)) %>% ungroup %>% 
+    group_by(word) %>% 
+    mutate(total = sum(n)) %>% 
+    filter(total > j)
+}
+
+pivoter <- function(words, df) {
+  words %>%
+    pivot_wider(id_cols = id, names_from = word, values_from = exists, values_fill = list(exists=0)) %>% 
+    right_join(select(df,id,province)) %>% 
+    drop_na()
+}
+
+wine_words <- function(df, j, stem) { 
+
+  words <- desc_to_words(df, c("wine","pinot","vineyard","tannins", "drink","flavors", "finish", "notes"))
+  
+  if (stem) {
+    words <- words_to_stems(words)
+  }
+  
+  words <- filter_by_count(words, j)
+
+  pivoter(words, df)
+}
+
+
+
+winobin <- wine_words(wine, 750, T)
+
+winobin = winobin%>%
+  left_join(select(binning, id, points_f:year_f), by = "id")
+
+
+wine3 = left_join(winobin,wine2, by = "id")
+
+wine3 <- wine3 %>% mutate(province = coalesce(province.x, province.y)) %>% 
+  select(-province.x, -province.y)
+
+
+```
+
+
+### 
+```{r}
+wine3<-na.omit(wine3)
+write_rds(wine3, file="group_9_naive.rds")
+```
+
+
+
+```{r}
+
+wine <- readRDS("group_9_naive.rds")
+split <- createDataPartition(wine$province, p = 0.8, list = FALSE)
+train <- wine[split, ]
+test <- wine[-split, ]
+fit <- train(province ~ .,
+             data = train, 
+             method = "naive_bayes",
+             tuneLength = 15,
+             metric = "Kappa",
+             trControl = trainControl(method = "cv", number = 5))
+confusionMatrix(predict(fit, test),factor(test$province))$overall['Kappa']
+```
+
