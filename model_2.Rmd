@@ -1,0 +1,65 @@
+---
+title: "model2"
+author: "Group 9"
+date: "2025-04-14"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Set Up
+
+```{r}
+library(tidyverse)
+library(caret)
+library(fastDummies)
+
+bank <- readRDS(gzcon(url("https://cd-public.github.io/D505/dat/BankChurners.rds")))
+```
+
+## Wrangling
+
+```{r}
+bank1 <- bank %>%
+  mutate(
+    Churn = factor(Churn),
+    Gender = factor(Gender),
+    Education_Level = factor(Education_Level),
+    Marital_Status = factor(Marital_Status),
+    Income_Category = factor(Income_Category),
+    Card_Category = factor(Card_Category)
+  )
+```
+
+
+## Features
+
+```{r}
+bank <- bank %>%
+  mutate(util_credit_ratio = Avg_Utilization_Ratio * Credit_Limit,
+        change_index = (1 + Total_Ct_Chng_Q4_Q1) * (1 + Total_Amt_Chng_Q4_Q1),
+    relationship_depth = Total_Relationship_Count * Months_on_book,
+activity_score = Total_Trans_Ct / Months_on_book,
+trust_score = ((1 / (1 + Months_on_book)) * 0.3 + (Total_Relationship_Count / 6) * 0.2 + (1 - Total_Revolving_Bal / (1 + Total_Trans_Amt)) * 0.5)) %>% 
+  select(util_credit_ratio, change_index, relationship_depth, activity_score, trust_score, Churn)
+```
+
+# Testing
+
+```{r}
+train(Churn ~ .,
+      data = bank |> select(1,2,3,4,5,grep("Churn", colnames(bank))), 
+      trControl = trainControl(method = "cv", number = 5),
+      method = "glm",
+      family = "binomial",
+      maxit = 5)$results['Kappa']
+```
+
+# Creating the RDS
+
+```{r}
+write_rds(bank, file = "model_2.rds")
+```
+
